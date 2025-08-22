@@ -152,7 +152,9 @@
       <div class="card span-12">
         <h3>My Books (from /books)</h3>
         <div class="book-grid" id="bookGrid"></div>
-        <p class="muted">नई किताब जोड़ने के लिए GitHub repo में <code>books/</code> folder में PDF upload करें—यहाँ अपने-आप दिख जाएगा।</p>
+        <p class="muted">
+          नई किताब जोड़ने के लिए GitHub repo में <code>books/</code> फ़ोल्डर में PDF upload करें—यहाँ अपने-आप दिख जाएगी।
+        </p>
       </div>
       <div class="card span-12">
         <h3>Open Your PDF (from phone)</h3>
@@ -169,7 +171,7 @@
       <div class="card span-6">
         <h3>Appearance</h3>
         <div class="row"><button class="btn" onclick="toggleTheme()">Toggle Dark/Light</button></div>
-        <p class="muted">Theme याद रहती है. App v1.4</p>
+        <p class="muted">Theme याद रहती है. App v2.0</p>
       </div>
       <div class="card span-6">
         <h3>Revision & Notes</h3>
@@ -271,42 +273,61 @@
   function pomoReset(){ if(pomoTimer){ clearInterval(pomoTimer); pomoTimer=null; } pomoMode='study'; pomoRemain=getPomoSetting().study*60; updatePomoUI(); }
   document.addEventListener('DOMContentLoaded',()=>{ pomoRemain=getPomoSetting().study*60; updatePomoUI(); });
 
-  // ---------- books (GitHub API) ----------
-  const GH_OWNER='Admishra55';  // <== change if needed
-  const GH_REPO='anstudytracker'; // <== change if needed
-  const BOOKS_PATH='books';
+  // ---------- books (auto from GitHub /books) ----------
+  // अपने GitHub यूज़र/रिपो यहाँ सेट रखें:
+  const GH_OWNER = 'Admishra55';
+  const GH_REPO  = 'anstudytracker';
+  const BOOKS_PATH = 'books';
   async function loadBooks(){
     const grid=$('#bookGrid'); if(!grid) return;
     grid.innerHTML='<p class="muted">Loading books…</p>';
     try{
       const api=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${BOOKS_PATH}`;
-      const res=await fetch(api); const items=await res.json();
+      const res=await fetch(api,{headers:{'Accept':'application/vnd.github+json'}});
+      if(!res.ok) throw new Error('GitHub API error');
+      const items=await res.json();
       const pdfs=(Array.isArray(items)?items:[]).filter(f=>f.type==='file' && /\.pdf$/i.test(f.name));
-      if(!pdfs.length){ grid.innerHTML='<p class="muted">No PDFs found in /books.</p>'; return;}
+      if(!pdfs.length){ grid.innerHTML='<p class="muted">No PDFs found in /books.</p>'; return; }
       grid.innerHTML='';
       pdfs.forEach(f=>{
         const title=f.name.replace(/\.pdf$/i,'');
         const card=document.createElement('div');
         card.className='book-card';
-        card.innerHTML=`<img src="logo_192x192.png" alt="PDF"><div><b>${title}</b></div><div class="row" style="justify-content:center;margin-top:8px"><a class="btn" href="${f.download_url}" target="_blank" rel="noopener">📖 Open</a></div>`;
+        card.innerHTML=`
+          <img src="logo_192x192.png" alt="PDF">
+          <div><b>${title}</b></div>
+          <div class="row" style="justify-content:center;margin-top:8px">
+            <a class="btn" href="${f.download_url}" target="_blank" rel="noopener">📖 Open</a>
+          </div>`;
         grid.appendChild(card);
       });
-    }catch(e){ console.error(e); grid.innerHTML='<p class="muted">Failed to load books.</p>'; }
+    }catch(e){
+      console.error(e);
+      grid.innerHTML='<p class="muted">Failed to load books. Make sure repo is public & books/ has PDFs.</p>';
+    }
   }
 
   // ---------- open local pdf ----------
-  function openLocalPDF(e){ const file=e.target.files && e.target.files[0]; if(!file || file.type!=='application/pdf') return alert('Please choose a PDF file'); const url=URL.createObjectURL(file); $('#pdfView').innerHTML=`<embed src="${url}" type="application/pdf" width="100%" height="500px">`; }
+  function openLocalPDF(e){
+    const file=e.target.files && e.target.files[0];
+    if(!file || file.type!=='application/pdf') return alert('Please choose a PDF file');
+    const url=URL.createObjectURL(file);
+    $('#pdfView').innerHTML=`<embed src="${url}" type="application/pdf" width="100%" height="500px">`;
+  }
 
   // ---------- focus overlay ----------
   function toggleFocusOverlay(show){ const el=$('#focusOverlay'); if(show===false){ el.classList.remove('show'); document.exitFullscreen?.(); return; } el.classList.add('show'); el.requestFullscreen?.(); }
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') toggleFocusOverlay(false) });
 
   // ---------- init ----------
-  window.addEventListener('load',()=>{ loadNotes(); updateDashboardStats(); updateTodayAndStreak(); updateTotalHours(); renderWeeklyChart(); updatePomoCount(); loadBooks(); if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }});
+  window.addEventListener('load',()=>{
+    loadNotes(); updateDashboardStats(); updateTodayAndStreak(); updateTotalHours();
+    renderWeeklyChart(); updatePomoCount(); loadBooks();
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  });
   </script>
 
   <!-- fallback SW register -->
   <script> if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); } </script>
 </body>
 </html>
-
