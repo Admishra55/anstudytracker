@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AN Study Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js");
+    }
+  </script>
+  <style>
+    :root { --brand:#4CAF50; --dark:#121212; --light:#ffffff; --muted:#666; }
+    *{box-sizing:border-box}
+    body { font-family: Arial, sans-serif; margin:0; padding:0; transition: background .3s, color .3s; background:#f8f8f8; color:#111 }
+    header { display:flex; align-items:center; justify-content:center; gap:10px; padding:12px; background: var(--brand); color: white; position:sticky; top:0; z-index:5 }
+    header img { height:40px }
+    nav { display:flex; justify-content:space-around; background:#333; color:white; position:sticky; top:64px; z-index:4 }
+    nav button { flex:1; padding:10px; border:none; background:#333; color:white; cursor:pointer }
+    nav button.active { background: var(--brand) }
+    .screen { display:none; padding:20px }
+    .active-screen { display:block }
+    .grid { display:grid; grid-template-columns: repeat(12,1fr); gap:12px }
+    @media(min-width:720px){ .span-6{ grid-column: span 6 } .span-4{ grid-column: span 4 } .span-8{ grid-column: span 8 } .span-12{ grid-column: span 12 } }
+    .card { background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:14px }
+    .card h3{ margin:4px 0 10px; font-size:16px; text-transform:uppercase; color:#333 }
+    .muted{ color: var(--muted) }
+    .row{ display:flex; gap:10px; flex-wrap:wrap }
+    .btn{ padding:8px 12px; border:none; border-radius:8px; background: var(--brand); color:white; cursor:pointer }
+    .btn.ghost{ background:#eee; color:#111 }
+    .btn.warn{ background:#ff9800 }
+    .btn.danger{ background:#f44336 }
+    input,select,textarea{ width:100%; padding:10px; border:1px solid #ccc; border-radius:8px }
+    .task-section { display:flex; gap:10px; margin:10px 0; flex-wrap:wrap }
+    #taskInput{ flex:2 }  #taskDue{ max-width:180px }
+    #taskList { list-style:none; padding:0; }
+    #taskList li { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:6px 0; padding:10px; border-radius:8px; background:#f2f2f2 }
+    #taskList .meta{ font-size:12px; color:#444 } .strike{ text-decoration: line-through; opacity:.7 }
+    body.dark { background: var(--dark); color:#eee } .dark .card{ background:#1f1f1f; border-color:#2b2b2b }
+    body.dark nav{ background:#222 } body.dark nav button{ background:#222; color:#eee } body.dark nav button.active{ background:#555 }
+    body.dark #taskList li{ background:#2a2a2a } body.dark .btn.ghost{ background:#2a2a2a; color:#eee }
+    #focusOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.92); color:white; display:none; z-index:9999; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:20px }
+    #focusOverlay.show{ display:flex }
+    #chartWrap{ height:220px; } #weeklyChart{ width:100%; height:200px; display:block }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="logo_192x192.png" alt="Logo" />
+    <h1>AN Study Tracker</h1>
+  </header>
+
+  <nav>
+    <button onclick="showScreen('dashboard')" id="nav-dashboard" class="active">Dashboard</button>
+    <button onclick="showScreen('planner')" id="nav-planner">Planner</button>
+    <button onclick="showScreen('focus')" id="nav-focus">Focus</button>
+    <button onclick="showScreen('settings')" id="nav-settings">Settings</button>
+  </nav>
+
+  <div id="dashboard" class="screen active-screen">
+    <div class="grid">
+      <div class="card span-8">
+        <h3>Today Summary</h3>
+        <p>Today Study: <b><span id="todayStudy">0</span></b> min • Streak: <b><span id="streak">0</span></b> days • Pomodoro: <b><span id="pomoCount">0</span></b></p>
+        <p class="muted" id="quote">“Small progress each day adds up to big results.”</p>
+      </div>
+      <div class="card span-4">
+        <h3>Totals</h3>
+        <p>Total Study Hours: <b><span id="totalHours">0</span></b></p>
+        <p>Tasks — Pending: <b><span id="tPending">0</span></b> • Done: <b><span id="tDone">0</span></b></p>
+      </div>
+      <div class="card span-12">
+        <h3>Weekly Analytics (Last 7 days)</h3>
+        <div id="chartWrap"><canvas id="weeklyChart"></canvas></div>
+        <p class="muted">Bar height = hours studied per day</p>
+      </div>
+      <div class="card span-6">
+        <h3>Next Alarm / Reminder</h3>
+        <div class="row">
+          <input type="time" id="alarmTime" />
+          <button class="btn" onclick="setAlarm()">Set Reminder</button>
+          <button class="btn ghost" onclick="clearAlarm()">Clear</button>
+        </div>
+        <p class="muted" id="alarmStatus">No alarm set.</p>
+      </div>
+      <div class="card span-6">
+        <h3>Quick Export</h3>
+        <button class="btn" onclick="exportPDF()">Export timetable/study report (PDF)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="planner" class="screen">
+    <div class="grid">
+      <div class="card span-6">
+        <h3>Add Task</h3>
+        <div class="task-section">
+          <input id="taskInput" type="text" placeholder="Enter a new task..." />
+          <input id="taskDue" type="date" />
+          <button class="btn" onclick="addTask()">➕ Add</button>
+        </div>
+        <ul id="taskList"></ul>
+        <div class="row"><button class="btn ghost" onclick="clearDone()">Clear Completed</button></div>
+      </div>
+      <div class="card span-6">
+        <h3>Google Calendar</h3>
+        <p class="muted">किसी task के साथ due date चुनें और Calendar बटन से event बनाएं।</p>
+        <div class="row">
+          <input id="gcalTitle" placeholder="Event title e.g. Study Algebra" />
+          <input id="gcalDate" type="date" />
+          <input id="gcalStart" type="time" value="18:00" />
+          <input id="gcalEnd" type="time" value="19:00" />
+          <button class="btn" onclick="openGCal()">Add to Google Calendar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="focus" class="screen">
+    <div class="grid">
+      <div class="card span-8">
+        <h3>Stopwatch</h3>
+        <p id="timer" style="font-size:36px; font-weight:bold; margin:10px 0">00:00:00</p>
+        <div class="row">
+          <button class="btn" onclick="startTimer()">Start</button>
+          <button class="btn ghost" onclick="stopTimer()">Stop</button>
+          <button class="btn" onclick="resetTimer()">Reset</button>
+          <button class="btn warn" onclick="toggleFocusOverlay(true)">Focus Mode (Block)</button>
+        </div>
+        <p class="muted">Stop दबाते ही समय Dashboard के Total Hours और आज के summary में जुड़ जाता है।</p>
+      </div>
+      <div class="card span-4">
+        <h3>Focus Tips</h3>
+        <ul>
+          <li>Focus Mode में screen dark हो जाएगी और full-screen सक्रिय होगा।</li>
+          <li>Recommended: Phone पर Do Not Disturb/Focus ऑन करें।</li>
+        </ul>
+      </div>
+      <div class="card span-12">
+        <h3>Pomodoro Timer</h3>
+        <p class="muted">डिफ़ॉल्ट: 25 min Study + 5 min Break (Auto-cycle)</p>
+        <div class="row">
+          <label>Study (min)<input id="pomoStudy" type="number" min="1" value="25" /></label>
+          <label>Break (min)<input id="pomoBreak" type="number" min="1" value="5" /></label>
+          <button class="btn" onclick="pomoStart()">Start Pomodoro</button>
+          <button class="btn ghost" onclick="pomoPause()">Pause</button>
+          <button class="btn danger" onclick="pomoReset()">Reset</button>
+        </div>
+        <p style="font-size:28px; margin:8px 0"><b id="pomoLabel">Study</b> — <span id="pomoClock">25:00</span></p>
+        <p class="muted">हर study फेज पूरा होने पर समय अपने-आप लॉग होकर Dashboard में जुड़ता है।</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" class="screen">
+    <div class="grid">
+      <div class="card span-6">
+        <h3>Appearance</h3>
+        <div class="row"><button class="btn" onclick="toggleTheme()">Toggle Dark/Light Theme</button></div>
+        <p class="muted">Theme आपकी device में याद रहेगी।</p>
+        <p class="muted">App Version: 1.2</p>
+      </div>
+      <div class="card span-6">
+        <h3>Revision & Notes</h3>
+        <textarea id="notes" rows="10" placeholder="Write your notes, formulas, revision points..."></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" onclick="saveNotes()">Save Notes</button>
+          <button class="btn ghost" onclick="loadNotes()">Load</button>
+          <button class="btn danger" onclick="clearNotes()">Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="focusOverlay">
+    <h2>Focus Mode</h2>
+    <p>Distraction block is ON. Press <b>Esc</b> or the button below to exit.</p>
+    <div class="row" style="justify-content:center; margin-top:8px">
+      <button class="btn" onclick="toggleFocusOverlay(false)">Exit Focus</button>
+    </div>
+  </div>
+
+  <script>
+    const $ = (q) => document.querySelector(q);
+    const $$ = (q) => Array.from(document.querySelectorAll(q));
+    function getStore(key, def){ try{ return JSON.parse(localStorage.getItem(key)) ?? def }catch{ return def } }
+    function setStore(key, val){ localStorage.setItem(key, JSON.stringify(val)) }
+    function ymd(date){ const d=new Date(date); const m=(d.getMonth()+1).toString().padStart(2,'0'); const day=d.getDate().toString().padStart(2,'0'); return `${d.getFullYear()}-${m}-${day}` }
+    function today(){ return ymd(new Date()) }
+    function showScreen(id){ $$('.screen').forEach(s=>s.classList.remove('active-screen')); $('#'+id).classList.add('active-screen'); $$('nav button').forEach(b=>b.classList.remove('active')); $('#nav-'+id).classList.add('active') }
+    function toggleTheme(){ document.body.classList.toggle('dark'); setStore('theme', document.body.classList.contains('dark')? 'dark':'light') }
+    (function(){ if(getStore('theme','light')==='dark') document.body.classList.add('dark') })();
+
+    document.addEventListener('DOMContentLoaded', loadTasks);
+    function addTask(){ const text=$('#taskInput').value.trim(); if(!text) return; const due=$('#taskDue').value||null;
+      const tasks=getStore('tasks',[]); tasks.push({text, due, done:false}); setStore('tasks',tasks); $('#taskInput').value=''; renderTaskList(tasks); updateDashboardStats(); }
+    function toggleTask(i){ const tasks=getStore('tasks',[]); tasks[i].done=!tasks[i].done; setStore('tasks',tasks); renderTaskList(tasks); updateDashboardStats(); }
+    function deleteTask(i){ const tasks=getStore('tasks',[]); tasks.splice(i,1); setStore('tasks',tasks); renderTaskList(tasks); updateDashboardStats(); }
+    function clearDone(){ const tasks=getStore('tasks',[]).filter(t=>!t.done); setStore('tasks',tasks); renderTaskList(tasks); updateDashboardStats(); }
+    function loadTasks(){ renderTaskList(getStore('tasks',[])); updateDashboardStats(); updateTodayAndStreak(); updateTotalHours(); renderWeeklyChart(); updatePomoCount(); }
+    function renderTaskList(tasks){ const ul=$('#taskList'); ul.innerHTML=''; if(tasks.length===0){ ul.innerHTML='<li class="muted">No tasks yet.</li>'; return; }
+      tasks.forEach((t,i)=>{ const li=document.createElement('li'); li.innerHTML = `
+        <div class="left"><input type="checkbox" ${t.done?'checked':''} onchange="toggleTask(${i})" /></div>
+        <div class="grow ${t.done?'strike':''}"><div><b>${t.text}</b></div><div class="meta">Due: ${t.due||'—'}</div></div>
+        <div class="row" style="gap:6px">
+          ${t.due? `<button class="btn ghost" onclick="gcalFromTask(${i})">Calendar</button>`:''}
+          <button class="btn danger" onclick="deleteTask(${i})">Delete</button>
+        </div>`; ul.appendChild(li); });
+    }
+
+    function toGoogleDate(d,t){ const parts=(t||'09:00').split(':'); const hh=parts[0]||'09'; const mm=parts[1]||'00'; const iso = new Date(`${d}T${hh}:${mm}:00`).toISOString(); const s = iso.replace(/[-:]/g,''); return s.slice(0,15)+'Z'; }
+    function gcalURL({title,details='',date,start='09:00',end='10:00'}){ const params=new URLSearchParams({ action:'TEMPLATE', text:title, details }); if(date){ params.set('dates', `${toGoogleDate(date,start)}/${toGoogleDate(date,end)}` ); } return 'https://calendar.google.com/calendar/render?'+params.toString(); }
+    function gcalFromTask(i){ const tasks=getStore('tasks',[]); const t=tasks[i]; if(!t.due) return; const url=gcalURL({title:`[Study] ${t.text}`, date:t.due, start:'18:00', end:'19:00'}); window.open(url,'_blank'); }
+    function openGCal(){ const title=$('#gcalTitle').value||'Study'; const date=$('#gcalDate').value; const start=$('#gcalStart').value||'18:00'; const end=$('#gcalEnd').value||'19:00'; const url=gcalURL({title, date, start, end}); if(!date) return alert('Please choose a date'); window.open(url,'_blank'); }
+
+    let timerInterval=null, seconds=0;
+    function updateDisplay(){ const h=String(Math.floor(seconds/3600)).padStart(2,'0'); const m=String(Math.floor((seconds%3600)/60)).padStart(2,'0'); const s=String(seconds%60).padStart(2,'0'); $('#timer').textContent = `${h}:${m}:${s}`; }
+    function startTimer(){ if(timerInterval) return; timerInterval=setInterval(()=>{ seconds++; updateDisplay(); },1000); }
+    function stopTimer(){ if(!timerInterval) return; clearInterval(timerInterval); timerInterval=null; if(seconds>0){ addStudySeconds(seconds); seconds=0; updateDisplay(); } }
+    function resetTimer(){ stopTimer(); seconds=0; updateDisplay(); }
+
+    function addStudySeconds(sec){
+      const total = (getStore('totalSeconds',0) || 0) + sec; setStore('totalSeconds', total); updateTotalHours();
+      const map = getStore('dayTotals',{}); const d=today(); map[d] = (map[d]||0) + sec; setStore('dayTotals', map);
+      updateTodayAndStreak(); renderWeeklyChart();
+    }
+
+    function toggleFocusOverlay(show){ const el=$('#focusOverlay'); if(show===false){ el.classList.remove('show'); document.exitFullscreen?.(); return; } el.classList.add('show'); el.requestFullscreen?.(); }
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') toggleFocusOverlay(false); });
+
+    function updateTotalHours(){ const hrs = (getStore('totalSeconds',0)||0)/3600; $('#totalHours').textContent = hrs.toFixed(2); }
+    function updateDashboardStats(){ const tasks=getStore('tasks',[]); const done=tasks.filter(t=>t.done).length; const pending=tasks.length-done; $('#tDone').textContent=done; $('#tPending').textContent=pending; }
+    function updateTodayAndStreak(){
+      const map=getStore('dayTotals',{}); const d=today(); const todayMin = Math.floor((map[d]||0)/60); $('#todayStudy').textContent=todayMin;
+      let streak=0; let date=new Date(); while(true){ const key=ymd(date); if((map[key]||0) >= 3600){ streak++; date.setDate(date.getDate()-1); } else break; }
+      setStore('streak', streak); $('#streak').textContent = streak;
+    }
+
+    function saveNotes(){ setStore('notes', $('#notes').value); alert('Notes saved'); }
+    function loadNotes(){ const v=getStore('notes',''); $('#notes').value=v; }
+    function clearNotes(){ if(confirm('Delete all notes?')){ setStore('notes',''); $('#notes').value=''; } }
+
+    function exportPDF(){
+      const tasks=getStore('tasks',[]); const dayTotals=getStore('dayTotals',{}); const totalH=((getStore('totalSeconds',0)||0)/3600).toFixed(2);
+      const w=window.open('','_blank');
+      const rowsTasks = tasks.map(t=>`<tr><td>${t.text}</td><td>${t.due||'-'}</td><td>${t.done?'Done':'Open'}</td></tr>`).join('');
+      const rowsDays = Object.keys(dayTotals).sort().map(k=>`<tr><td>${k}</td><td>${(dayTotals[k]/3600).toFixed(2)} h</td></tr>`).join('');
+      w.document.write(`<!doctype html><html><head><title>AN Study Report</title><style>body{font-family:Arial} table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:6px} h1{margin:6px 0}</style></head><body>
+        <h1>AN Study Tracker – Report</h1>
+        <p><b>Total Study Hours:</b> ${totalH} | <b>Streak:</b> ${getStore('streak',0)}</p>
+        <h3>Tasks</h3>
+        <table><tr><th>Task</th><th>Due</th><th>Status</th></tr>${rowsTasks||'<tr><td colspan=3>No tasks</td></tr>'}</table>
+        <h3>Daily Study</h3>
+        <table><tr><th>Date</th><th>Hours</th></tr>${rowsDays||'<tr><td colspan=2>No data</td></tr>'}</table>
+      </body></html>`);
+      w.document.close(); w.focus(); w.print();
+    }
+
+    let alarmTimeout=null;
+    async function ensureNotify(){ if(!('Notification' in window)) return false; if(Notification.permission==='granted') return true; if(Notification.permission!=='denied'){ const p=await Notification.requestPermission(); return p==='granted'; } return false; }
+    function setAlarm(){ const t=$('#alarmTime').value; if(!t) return alert('Choose a time');
+      clearAlarm(); const now=new Date(); const [hh,mm]=t.split(':').map(Number); const at=new Date(); at.setHours(hh,mm,0,0); if(at<now) at.setDate(at.getDate()+1); const ms=at-now; setStore('alarmAt', at.toISOString()); $('#alarmStatus').textContent='Alarm set for '+at.toLocaleTimeString();
+      alarmTimeout=setTimeout(()=>{ ring(); }, ms);
+    }
+    function ring(){ const text='Study Reminder! Time to focus.'; try{ if('Notification' in window && Notification.permission==='granted'){ new Notification(text); } }catch{} const a=new Audio(); a.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAZGF0YQAAAAA='; a.play?.(); alert(text); clearAlarm(); }
+    function clearAlarm(){ if(alarmTimeout) clearTimeout(alarmTimeout); alarmTimeout=null; setStore('alarmAt', null); $('#alarmStatus').textContent='No alarm set.' }
+    (function(){ const iso=getStore('alarmAt',null); if(!iso) return; const at=new Date(iso); const now=new Date(); if(at>now){ $('#alarmStatus').textContent='Alarm set for '+at.toLocaleTimeString(); alarmTimeout=setTimeout(ring, at-now); } else { setStore('alarmAt',null); } })();
+    document.addEventListener('click', ()=>{ ensureNotify(); }, { once:true });
+
+    function getLast7(){ const arr=[]; const map=getStore('dayTotals',{}); const d=new Date(); for(let i=6;i>=0;i--){ const x=new Date(d); x.setDate(d.getDate()-i); const key=ymd(x); arr.push({ key, label: `${x.getDate()}/${x.getMonth()+1}`, sec: map[key]||0 }); } return arr }
+    function renderWeeklyChart(){ const c=$('#weeklyChart'); if(!c) return; const ctx=c.getContext('2d'); const dpr=window.devicePixelRatio||1; const W=c.clientWidth; const H=c.clientHeight; c.width=W*dpr; c.height=H*dpr; ctx.scale(dpr,dpr); ctx.clearRect(0,0,W,H);
+      const data=getLast7(); const maxSec=Math.max(3600, ...data.map(d=>d.sec)); const pad=24; const barW = (W - pad*2) / (data.length*1.4); const gap = barW*0.4; const base=H-28;
+      ctx.font='12px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      data.forEach((d,i)=>{ const x = pad + i*(barW+gap) + gap/2; const h = Math.round(((d.sec)/maxSec) * (H-70)); const y=base-h;
+        ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--brand')||'#4CAF50';
+        ctx.fillRect(x, y, barW, h);
+        ctx.fillStyle=getComputedStyle(document.body).color; ctx.fillText((d.sec/3600).toFixed(1), x+barW/2, y-10);
+        ctx.fillText(d.label, x+barW/2, H-12);
+      });
+      ctx.strokeStyle='#bbb'; ctx.beginPath(); ctx.moveTo(pad, base+0.5); ctx.lineTo(W-pad, base+0.5); ctx.stroke();
+    }
+    window.addEventListener('resize', renderWeeklyChart);
+
+    let pomoTimer=null, pomoRemain=0, pomoMode='study'; let pomoLastStudySec=0;
+    function getPomoSetting(){ const study=parseInt($('#pomoStudy').value||25), brk=parseInt($('#pomoBreak').value||5); return {study, brk}; }
+    function fmtMMSS(sec){ const m=String(Math.floor(sec/60)).padStart(2,'0'); const s=String(sec%60).padStart(2,'0'); return `${m}:${s}` }
+    function updatePomoUI(){ $('#pomoLabel').textContent = (pomoMode==='study'?'Study':'Break'); $('#pomoClock').textContent = fmtMMSS(pomoRemain); }
+    function logPomoSession(){ addStudySeconds(pomoLastStudySec); const map=getStore('pomoSessions',{}); const d=today(); map[d]=(map[d]||0)+1; setStore('pomoSessions',map); updatePomoCount(); }
+    function updatePomoCount(){ const map=getStore('pomoSessions',{}); const d=today(); $('#pomoCount').textContent = map[d]||0; }
+    function startPhase(){ const {study,brk}=getPomoSetting(); if(pomoMode==='study'){ pomoRemain = (study*60); } else { pomoRemain=(brk*60); } updatePomoUI(); if(pomoTimer) clearInterval(pomoTimer); pomoTimer=setInterval(()=>{ pomoRemain--; updatePomoUI(); if(pomoRemain<=0){ clearInterval(pomoTimer); pomoTimer=null; if(pomoMode==='study'){ pomoLastStudySec = getPomoSetting().study * 60; logPomoSession(); pomoMode='break'; } else { pomoMode='study'; } startPhase(); } },1000); }
+    function pomoStart(){ if(!pomoTimer){ pomoMode = (pomoMode||'study'); startPhase(); } }
+    function pomoPause(){ if(pomoTimer){ clearInterval(pomoTimer); pomoTimer=null; } }
+    function pomoReset(){ if(pomoTimer){ clearInterval(pomoTimer); pomoTimer=null; } const {study}=getPomoSetting(); pomoMode='study'; pomoRemain=study*60; updatePomoUI(); }
+    document.addEventListener('DOMContentLoaded', ()=>{ const {study}=getPomoSetting(); pomoRemain=study*60; updatePomoUI(); });
+
+    window.addEventListener('load', ()=>{ loadNotes(); updateDashboardStats(); updateTodayAndStreak(); updateTotalHours(); renderWeeklyChart(); updatePomoCount(); if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js'); } });
+  </script>
+</body>
+</html>
