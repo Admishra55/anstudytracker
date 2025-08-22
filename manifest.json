@@ -1,6 +1,6 @@
 {
   "name": "AN Study Tracker",
-  "short_name": "StudyTracker",
+  "short_name": "AN Study",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#4CAF50",
